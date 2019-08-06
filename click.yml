@@ -1,0 +1,41 @@
+---
+- hosts: test-server
+  remote_user: root
+  tasks:
+   - name: add repo
+     apt_key:
+       keyserver: keyserver.ubuntu.com
+       id: E0C56BD4
+
+   - name: add the repo to APT
+     copy:
+       dest: "/etc/apt/sources.list.d/clickhouse.list"
+       content: |
+               deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
+
+   - name: update package
+     become: true
+     apt:
+       upgrade: yes
+       update_cache: yes
+
+   - name: install clickhouse server
+     apt: name=clickhouse-server update-cache=yes force=yes
+     register: clk_srvr
+
+   - fail: msg="ClickHouse server already installed"
+     when: clk_srvr|failed
+
+   - name: install clickhouse client
+     apt: name=clickhouse-client update-cache=yes force=yes
+     register: clk_clnt
+
+   - fail: msg="ClickHouse server already installed"
+     when: clk_clnt|failed
+
+   - name: start clickhouse
+     service:
+         name: clickhouse-server
+         state: started
+
+     

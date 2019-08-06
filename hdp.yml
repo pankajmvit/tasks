@@ -1,0 +1,248 @@
+---
+- hosts: test-server
+  remote_user: root
+  tasks:
+  - name: install java 8
+    apt: name=openjdk-8-jdk update-cache=yes force=yes
+    register: jav_in
+
+  - fail: msg="java already installed"
+    when: jav_in is failed
+
+    #  - name: create hadoop user group
+    #group:
+    # name: hadoop
+    # state: present     
+    # command: addgroup hadoop
+    #  - name: check for group
+    #command: getent group hadoop
+    #register: grp_hdp
+
+    #- name: if group doesn't exist, Create group 
+    #command: addgroup hadoop
+    #when: not grp_hdp
+
+      #- name: check for id
+      #command: id
+      #register: id_usr
+
+    #- name: create hduser
+    #user:
+    # name: hduser
+    # shell: /bin/bash
+    # groups: hadoop
+    # append: yes  
+
+    #- name: Add hduser to group hadoop
+    #user:
+    # name: hduser
+    # group: hadoop 
+      #- name: add user in group
+      #command: adduser --ingroup hadoop hduser
+    #when: not id_usr
+
+    # - name: add hduser in sudo
+    #command: adduser hduser sudo
+    #command: usermod -aG sudo hduser
+
+    #- hosts: test-server
+    #become: true
+    # become_user: hduser
+    #tasks:
+
+    #- name: create id_rsa file
+    #command: chdir=/home/hduser ssh-keygen -t rsa -P ""
+    #shell: ssh-keygen -b 2048 -t rsa -f /home/hduser/.ssh/id_rsa -q -N ""
+    #when: stat_result.stat.exists == False
+ # - stat: path=/home/hduser/.ssh file_type=directory patterns="*id_rsa*"
+  #  register: myvar
+
+    #- name: copy id_rsa to auth_keys
+    #shell: cat /home/hduser/.ssh/id_rsa.pub >> /home/hduser/.ssh/authorized_keys
+
+    #- hosts: test-server
+    #remote_user: root
+    #tasks:
+  - name: download hadoop tar
+   # command: chdir=/usr/local wget https://archive.apache.org/dist/hadoop/core/hadoop-2.8.5/hadoop-2.8.5.tar.gz
+    get_url:
+      url: https://archive.apache.org/dist/hadoop/core/hadoop-2.8.5/hadoop-2.8.5.tar.gz
+      dest: /usr/local
+      force: no
+
+  - name: untar the hadoop
+    unarchive:
+      src: /usr/local/hadoop-2.8.5.tar.gz
+      dest: /usr/local/
+      remote_src: yes
+
+  - name: Checking if the directory exists
+    stat:
+     path: /usr/local/hadoop
+    register: stat_dir
+
+  - name: rename the untar hadoop dir
+    shell: mv /usr/local/hadoop-2.8.5 /usr/local/hadoop
+    when: stat_dir.stat.exists == False
+    #owner: hduser
+    #group: hadoop
+
+  #- file:
+   #   path: /usr/local/hadoop
+    #  owner: hduser
+     # group: hadoop
+      #resurse: yes
+  - name: changing the ownership of dir hadoop
+    file: path=/usr/local/hadoop owner=root group=root state=directory recurse=yes
+
+    #- hosts: test-server
+    #become: true
+    #become_user: hduser
+    #tasks:
+
+  - name: Set the java home
+    #lineinfile: dest=/home/hduser/.bashrc regexp="^/usr/lib/jvm/java-8-openjdk-amd64" line="export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64" backrefs=yes
+    lineinfile: dest=/root/.bashrc line="export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64"
+  - name: set the hadoop home
+    lineinfile: dest=/root/.bashrc line="export HADOOP_HOME=/usr/local/hadoop"
+  - name: set the Mapred home
+    lineinfile: dest=/root/.bashrc line="export HADOOP_MAPRED_HOME=$HADOOP_HOME"
+  - name: set the Common home
+    lineinfile: dest=/root/.bashrc line="export HADOOP_COMMON_HOME=$HADOOP_HOME"
+  - name: set the hdfs home
+    lineinfile: dest=/root/.bashrc line="export HADOOP_HDFS_HOME=$HADOOP_HOME"
+  - name: set the Yarn home
+    lineinfile: dest=/root/.bashrc line="export YARN_HOME=$HADOOP_HOME"
+    #  - name: set ansible key checking
+    #lineinfile: dest=/home/hduser/.bashrc line="export ANSIBLE_HOST_KEY_CHECKING=False"  
+  - name: set the Hadoop_opts home
+    lineinfile: dest=/root/.bashrc line="export HADOOP_OPTS="-Djava.library.path=$HADOOP_HOME/lib/native""    
+  - name: set the path home
+    lineinfile: dest=/root/.bashrc line="export PATH=$PATH:$HADOOP_HOME/sbin"
+  - name: set java home in hadoop env
+    lineinfile: dest=/usr/local/hadoop/etc/hadoop/hadoop-env.sh line="export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64"
+  - name: set HADOOP_CONF_DIR in hadoop env
+    lineinfile: dest=/usr/local/hadoop/etc/hadoop/hadoop-env.sh line="export HADOOP_CONF_DIR=${HADOOP_CONF_DIR:-"/usr/local/hadoop/etc/hadoop/"}"
+  - name: set the Common_lib_Native home
+    lineinfile: dest=/root/.bashrc line="export HADOOP_COMMON_LIB_NATIVE_DIR=$HADOOP_HOME/lib/native"
+
+
+- hosts: test-server
+  remote_user: root
+  tasks:
+  - file:
+      path: /app/hadoop/tmp
+      state: directory
+      owner: root
+      group: root
+      mode: 0750
+      
+  - file:
+      path: /app/hadoop/namenode
+      state: directory
+      owner: root
+      group: root
+      mode: 0750
+      
+  - file:
+      path: /app/hadoop/datanode
+      state: directory
+      owner: root
+      group: root
+      mode: 0750        
+
+  - name: Insert in core-site
+    blockinfile:
+      path: /usr/local/hadoop/etc/hadoop/core-site.xml
+      insertafter: "<configuration>"
+      content: |
+        <property>
+         <name>hadoop.tmp.dir</name>
+         <value>/app/hadoop/tmp</value>
+        </property>
+        <property>
+         <name>fs.default.name</name>
+         <value>hdfs://localhost:9001</value>
+        </property>
+
+  - name: copying mapred-site.xml.template to mapred-site.xml
+    copy:
+      src: /usr/local/hadoop/etc/hadoop/mapred-site.xml.template
+      dest: /usr/local/hadoop/etc/hadoop/mapred-site.xml
+      remote_src: yes
+      owner: root
+      group: root
+      mode: 0644   
+  
+  
+  - name: Insert in mapred-site
+    blockinfile:
+      path: /usr/local/hadoop/etc/hadoop/mapred-site.xml
+      insertafter: "<configuration>"
+      content: |
+        <property>
+        <name>mapreduce.framework.name</name>
+        <value>yarn</value>
+        </property>
+        
+  - name: Insert in yarn-site
+    blockinfile:
+      path: /usr/local/hadoop/etc/hadoop/mapred-site.xml
+      insertafter: "<configuration>"
+      content: |
+        <property>
+        <name>mapreduceyarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+        </property>
+
+  - name: Insert in hdfs-site
+    blockinfile:
+      path: /usr/local/hadoop/etc/hadoop/hdfs-site.xml
+      insertafter: "<configuration>"
+      content: |
+        <property>
+         <name>dfs.replication</name>
+         <value>1</value>
+        </property>
+        <property>
+         <name>dfs.name.dir</name>
+         <value>/app/hadoop/namenode</value>
+        </property>
+        <property>
+         <name>dfs.data.dir</name>
+         <value>/app/hadoop/namenode</value>
+        </property>
+
+- hosts: test-server
+  #become: true
+  #become_user: hduser
+  remote_user: root
+  tasks:
+
+  - name: Format the namenode
+    command: /usr/local/hadoop/bin/hdfs namenode -format
+
+  - name: remove nn dir
+    file:
+      state: absent
+      path: /app/hadoop/namenode/
+
+  - name: start the hadoop services
+    command: /usr/local/hadoop/sbin/start-all.sh
+
+    register: status_dfs
+
+    #  - name: start the yarn services
+    # command: /usr/local/hadoop/sbin/start-yarn.sh
+    # register: status_yarn
+
+
+  - name: Print the hadoop status
+    debug:
+      msg: "Hadoop Services..: {{ status_dfs.stdout }}"
+
+      # - name: Print the hadoop status
+      #debug:
+      #msg: "Hadoop Services..: {{ status_yarn.stdout }}"
+
+
